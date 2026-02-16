@@ -1,103 +1,67 @@
-const UNSPLASH_ACCESS_KEY = process.env.UNSPLASH_ACCESS_KEY;
+'use server';
+
+// NO API KEYS NEEDED! - This uses public Wikipedia and DuckDuckGo
 
 export async function generateAnswer(question: string) {
     try {
-        // Clean the question to get a good search topic.
-        // Remove "who is", "what is", "the", "a", "an" at the start.
-        let topic = question
-            .replace(/^(who|what|where|when|why|how)\s(is|are|was|were|do|does|did|can|could|should|would)\s/i, '')
-            .replace(/^(the|a|an)\s/i, '') // Remove articles like "the apple" -> "apple"
+        // Clean the question to get a good search topic
+        const topic = question.replace(/^(who|what|where|when|why|how)\s(is|are|was|were|do|does|did|can|could|should|would)\s/i, '')
+            .replace(/^(the|a|an)\s/i, '')
             .trim();
 
-        console.log(`Searching for topic: "${topic}"`);
+        console.log(`Searching Wikipedia for: "${topic}"`);
 
-        // ---------------------------------------------------------
-        // STRATEGY 1: DuckDuckGo Instant Answer (Great for definitions/facts)
-        // ---------------------------------------------------------
-        try {
-            const ddgUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(topic)}&format=json&no_html=1&skip_disambig=1`;
-            const ddgResponse = await fetch(ddgUrl);
+        // 1. Wikipedia Summary Search (Smart OpenSearch to handle typos)
+        const wikiSearchUrl = `https://en.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(topic)}&limit=1&format=json`;
+        const searchResp = await fetch(wikiSearchUrl);
+        const searchData = await searchResp.json();
 
-            if (ddgResponse.ok) {
-                const ddgData = await ddgResponse.json();
-                const abstract = ddgData.AbstractText;
-
-                if (abstract && abstract.length > 20) {
-                    return `Quack! 🦆 Here is what I found: \n\n ${abstract} \n\n (Source: DuckDuckGo)`;
-                }
-            }
-        } catch (ddgError) {
-            console.warn("DuckDuckGo failed, trying Wikipedia...", ddgError);
+        let bestTitle = topic;
+        // If Wikipedia suggests a correction, use it!
+        if (searchData[1] && searchData[1][0]) {
+            bestTitle = searchData[1][0];
         }
 
-        // ---------------------------------------------------------
-        // STRATEGY 2: Wikipedia Summary (Great for famous people/places)
-        // ---------------------------------------------------------
-        try {
-            // 1. First, ask Wikipedia for the most likely page title (e.g., "apple" -> "Apple")
-            const wikiSearchUrl = `https://en.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(topic)}&limit=1&format=json`;
-            const searchResp = await fetch(wikiSearchUrl);
-            const searchData = await searchResp.json();
+        // 2. Clear Summary API
+        const summaryUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(bestTitle)}`;
+        const summaryResp = await fetch(summaryUrl);
 
-            // If we found a matching page title, use it. Otherwise fallback to topic.
-            const bestTitle = (searchData[1] && searchData[1][0]) ? searchData[1][0] : topic;
+        if (summaryResp.ok) {
+            const data = await summaryResp.json();
 
-            const wikiSummaryUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(bestTitle)}`;
-            const summaryResp = await fetch(wikiSummaryUrl);
-
-            if (summaryResp.ok) {
-                const makeData = await summaryResp.json();
-                if (makeData.extract) {
-                    return `Here is what I found on Wikipedia: \n\n ${makeData.extract} \n\n (Source: Wikipedia 📚)`;
-                }
-                // sometimes disambiguation happens, try description
-                if (makeData.description) {
-                    return `I found something about "${bestTitle}": ${makeData.description}. \n\n (Source: Wikipedia 📚)`;
-                }
+            if (data.extract) {
+                return {
+                    title: data.title,
+                    description: data.description || "Encyclopedia Entry",
+                    text: data.extract,
+                    source: "Wikipedia 📚",
+                    image: data.thumbnail?.source || null, // Use Wikipedia image if available
+                    url: data.content_urls?.desktop?.page || `https://en.wikipedia.org/wiki/${encodeURIComponent(bestTitle)}`
+                };
             }
-        } catch (wikiError) {
-            console.warn("Wikipedia failed too.", wikiError);
         }
 
-        // ---------------------------------------------------------
-        // STRATEGY 3: Ultimate Fallback (Google Link)
-        // ---------------------------------------------------------
-        return `I looked everywhere but couldn't find a simple answer for "${topic}". \n\n But Google definitely knows! \n [Click here to search Google](https://www.google.com/search?q=${encodeURIComponent(question)})`;
+        // 3. Fallback: DuckDuckGo Instant Answer
+        const ddgUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(topic)}&format=json&no_html=1&skip_disambig=1`;
+        const ddgResp = await fetch(ddgUrl);
+        if (ddgResp.ok) {
+            const ddgData = await ddgResp.json();
+            if (ddgData.AbstractText) {
+                return {
+                    title: ddgData.Heading || topic,
+                    description: "Instant Answer",
+                    text: ddgData.AbstractText,
+                    source: "DuckDuckGo 🦆",
+                    image: ddgData.Image || null,
+                    url: ddgData.AbstractURL || null
+                };
+            }
+        }
+
+        return null; // found nothing
 
     } catch (error) {
-        console.error("Search API Error:", error);
-        return `Oops! I had trouble finding an answer. \n\n You can search Google here: \n [Click here](https://www.google.com/search?q=${encodeURIComponent(question)})`;
-    }
-}
-
-export async function getRelatedImages(query: string) {
-    if (!UNSPLASH_ACCESS_KEY) {
-        console.warn("Unsplash API Key missing");
-        return [];
-    }
-
-    try {
-        // IMPROVEMENT: Clean the query to get better images.
-        // Remove "who is", "what is", etc. for better search results.
-        const cleanQuery = query.replace(/^(who|what|where|when|why|how)\s(is|are|was|were|do|does|did)\s/i, '').trim();
-        const searchTerm = cleanQuery || query; // Fallback to original if empty
-
-        console.log(`Searching images for: ${searchTerm}`);
-
-        const response = await fetch(`https://api.unsplash.com/search/photos?query=${encodeURIComponent(searchTerm)}&per_page=3&orientation=squarish`, {
-            headers: {
-                Authorization: `Client-ID ${UNSPLASH_ACCESS_KEY}`
-            }
-        });
-
-        if (!response.ok) {
-            throw new Error(`Unsplash error: ${response.statusText}`);
-        }
-
-        const data = await response.json();
-        return data.results.map((img: any) => img.urls.small);
-    } catch (error) {
-        console.error("Unsplash API Error:", error);
-        return [];
+        console.error("Search Error:", error);
+        return null;
     }
 }
