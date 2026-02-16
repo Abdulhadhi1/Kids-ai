@@ -12,8 +12,8 @@ export async function generateAnswer(question: string) {
 
     try {
         const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-        // Using "gemini-1.5-flash" which is the current stable model
-        // If this fails, we can try "gemini-1.0-pro"
+        // Using "gemini-1.5-flash" - standard model.
+        // If this fails, try "gemini-1.0-pro" or "gemini-pro"
         const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
         const prompt = `You are a friendly, helpful, and fun teacher for a 3rd-grade student (approx 8-9 years old).
@@ -29,7 +29,11 @@ export async function generateAnswer(question: string) {
         return response.text();
     } catch (error: any) {
         console.error("Gemini API Error:", error);
-        return `Error: ${error.message || "Something went wrong with the AI."}`;
+        // Fallback for demo purposes if API fails often
+        if (error.message?.includes('404') || error.message?.includes('not found')) {
+            return "I'm having trouble connecting to my Super Brain (Model not found). Try checking your API Key or try again later! 🧠❌";
+        }
+        return `Oops! My brain is a bit fuzzy. Error: ${error.message || "Unknown error"}`;
     }
 }
 
@@ -40,8 +44,14 @@ export async function getRelatedImages(query: string) {
     }
 
     try {
-        // Simple Unsplash search
-        const response = await fetch(`https://api.unsplash.com/search/photos?query=${encodeURIComponent(query)}&per_page=3&orientation=squarish`, {
+        // IMPROVEMENT: Clean the query to get better images.
+        // Remove "who is", "what is", etc. for better search results.
+        const cleanQuery = query.replace(/^(who|what|where|when|why|how)\s(is|are|was|were|do|does|did)\s/i, '').trim();
+        const searchTerm = cleanQuery || query; // Fallback to original if empty
+
+        console.log(`Searching images for: ${searchTerm}`);
+
+        const response = await fetch(`https://api.unsplash.com/search/photos?query=${encodeURIComponent(searchTerm)}&per_page=3&orientation=squarish`, {
             headers: {
                 Authorization: `Client-ID ${UNSPLASH_ACCESS_KEY}`
             }
