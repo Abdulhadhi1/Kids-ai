@@ -12,8 +12,8 @@ export async function generateAnswer(question: string) {
 
     try {
         const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-        // Using "gemini-1.5-flash" - standard stable model.
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        // Using "gemini-pro" as it works best with free API keys on vercel
+        const model = genAI.getGenerativeModel({ model: "gemini-pro" });
 
         const prompt = `You are a helpful, fun, and friendly teacher for a 3rd-grade student (approx 8-9 years old).
     Explain this question simply and clearly.
