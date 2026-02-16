@@ -1,26 +1,49 @@
-@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+  /* Pastel Blue Theme */
+  --background: #f0f8ff; /* AliceBlue */
+  --foreground: #1e293b; /* Slate-800 */
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --primary: #93c5fd; /* Blue-300 */
+  --primary-foreground: #1e3a8a; /* Blue-900 */
+
+  --secondary: #fef08a; /* Yellow-200 */
+  --secondary-foreground: #854d0e; /* Yellow-900 */
+
+  --accent-pink: #f9a8d4; /* Pink-300 */
+  --accent-green: #86efac; /* Green-300 */
+
+  --radius: 1rem;
 }
 
 @media (prefers-color-scheme: dark) {
+  /* Avoiding dark mode for now as per "Kid Friendly" palette usually implies bright/light */
+  /* But keeping variables ready if needed later, mapping them to same light theme for consistency */
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #f0f8ff;
+    --foreground: #1e293b;
+    --primary: #93c5fd;
+    --primary-foreground: #1e3a8a;
+    --secondary: #fef08a;
+    --secondary-foreground: #854d0e;
+    --accent-pink: #f9a8d4;
+    --accent-green: #86efac;
+    --radius: 1rem;
   }
 }
 
 body {
-  background: var(--background);
   color: var(--foreground);
+  background: var(--background);
   font-family: Arial, Helvetica, sans-serif;
+  overflow-x: hidden;
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
 }
