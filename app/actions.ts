@@ -1,39 +1,29 @@
-'use server';
-
-import { GoogleGenerativeAI } from "@google/generative-ai";
-
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const UNSPLASH_ACCESS_KEY = process.env.UNSPLASH_ACCESS_KEY;
 
 export async function generateAnswer(question: string) {
-    if (!GEMINI_API_KEY) {
-        return "I'm sorry, I don't have my brain connected (API Key missing).";
-    }
-
     try {
-        const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-        // Using "gemini-pro" as it works best with free API keys on vercel
-        const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+        // Clean the question to get a good search topic
+        const topic = question.replace(/^(who|what|where|when|why|how)\s(is|are|was|were|do|does|did|can|could|should|would)\s/i, '').trim();
+        const searchUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(topic)}`;
 
-        const prompt = `You are a helpful, fun, and friendly teacher for a 3rd-grade student (approx 8-9 years old).
-    Explain this question simply and clearly.
-    Use emojis.
-    Keep it concise (max 4-5 sentences).
-    Use bullet points if helpful.
-
-    Question: "${question}"`;
-
-        const result = await model.generateContent(prompt);
-        const response = await result.response;
-        return response.text();
-    } catch (error: any) {
-        console.error("Gemini API Error:", error);
-
-        // Return explicit error message for debugging
-        if (error.message?.includes('404') || error.message?.includes('not found')) {
-            return `Error: Model Not Found. It seems 'gemini-1.5-flash' is not available for your key. Please try enabling the API in Google Cloud Console or use a Paid Plan. (Technical: ${error.message})`;
+        const response = await fetch(searchUrl);
+        if (!response.ok) {
+            return `I couldn't find a simple explanation for "${topic}". \n\n But you can check Google! \n [Click here to search Google](https://www.google.com/search?q=${encodeURIComponent(question)})`;
         }
-        return `Oops! Something went wrong. Error: ${error.message || "Unknown error"}`;
+
+        const data = await response.json();
+
+        let answer = data.extract;
+        if (!answer) {
+            return `I found the topic "${topic}" but I'm not sure how to explain it simply. \n\n Try asking differently or check Google! \n [Click here](https://www.google.com/search?q=${encodeURIComponent(question)})`;
+        }
+
+        // Add a friendly intro
+        return `Here is what I know about ${topic}: \n\n ${answer} \n\n (Source: Wikipedia 📚)`;
+
+    } catch (error) {
+        console.error("Wikipedia API Error:", error);
+        return `Oops! I had trouble finding an answer. \n\n You can search Google here: \n [Click here](https://www.google.com/search?q=${encodeURIComponent(question)})`;
     }
 }
 
