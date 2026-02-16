@@ -12,7 +12,9 @@ export async function generateAnswer(question: string) {
 
     try {
         const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-        const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+        // Using "gemini-1.5-flash" which is the current stable model
+        // If this fails, we can try "gemini-1.0-pro"
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
         const prompt = `You are a friendly, helpful, and fun teacher for a 3rd-grade student (approx 8-9 years old).
     Explain the following question in a simple, engaging way.
