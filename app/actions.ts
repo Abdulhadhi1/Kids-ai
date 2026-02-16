@@ -12,7 +12,7 @@ export async function generateAnswer(question: string) {
         console.log(`Searching for topic: "${topic}"`);
 
         // ---------------------------------------------------------
-        // STRATEGY 1: DuckDuckGo Instant Answer
+        // STRATEGY 1: DuckDuckGo Instant Answer (Great for definitions/facts)
         // ---------------------------------------------------------
         try {
             const ddgUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(topic)}&format=json&no_html=1&skip_disambig=1`;
@@ -23,7 +23,7 @@ export async function generateAnswer(question: string) {
                 const abstract = ddgData.AbstractText;
 
                 if (abstract && abstract.length > 20) {
-                    return `Here is what I found: \n\n ${abstract} \n\n (Source: DuckDuckGo 🦆)`;
+                    return `Quack! 🦆 Here is what I found: \n\n ${abstract} \n\n (Source: DuckDuckGo)`;
                 }
             }
         } catch (ddgError) {
@@ -31,7 +31,7 @@ export async function generateAnswer(question: string) {
         }
 
         // ---------------------------------------------------------
-        // STRATEGY 2: Wikipedia Summary (Smart Search)
+        // STRATEGY 2: Wikipedia Summary (Great for famous people/places)
         // ---------------------------------------------------------
         try {
             // 1. First, ask Wikipedia for the most likely page title (e.g., "apple" -> "Apple")
@@ -39,20 +39,18 @@ export async function generateAnswer(question: string) {
             const searchResp = await fetch(wikiSearchUrl);
             const searchData = await searchResp.json();
 
-            // searchData format: [search_term, [title1], [desc1], [url1]]
+            // If we found a matching page title, use it. Otherwise fallback to topic.
             const bestTitle = (searchData[1] && searchData[1][0]) ? searchData[1][0] : topic;
 
-            // 2. Fetch summary for that title
             const wikiSummaryUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(bestTitle)}`;
             const summaryResp = await fetch(wikiSummaryUrl);
 
             if (summaryResp.ok) {
                 const makeData = await summaryResp.json();
-                // If "standard" extract exists, use it.
                 if (makeData.extract) {
                     return `Here is what I found on Wikipedia: \n\n ${makeData.extract} \n\n (Source: Wikipedia 📚)`;
                 }
-                // Sometimes type is 'disambiguation', try description
+                // sometimes disambiguation happens, try description
                 if (makeData.description) {
                     return `I found something about "${bestTitle}": ${makeData.description}. \n\n (Source: Wikipedia 📚)`;
                 }
@@ -64,7 +62,7 @@ export async function generateAnswer(question: string) {
         // ---------------------------------------------------------
         // STRATEGY 3: Ultimate Fallback (Google Link)
         // ---------------------------------------------------------
-        return `I couldn't find a simple answer for "${topic}". \n\n But Google definitely knows! \n [Click here to search Google for "${question}"](https://www.google.com/search?q=${encodeURIComponent(question)})`;
+        return `I looked everywhere but couldn't find a simple answer for "${topic}". \n\n But Google definitely knows! \n [Click here to search Google](https://www.google.com/search?q=${encodeURIComponent(question)})`;
 
     } catch (error) {
         console.error("Search API Error:", error);
