@@ -102,7 +102,22 @@ export default function Home() {
       <CameraView />
 
       {/* Content Area - dynamic height */}
-      <div className="flex-1 overflow-y-auto pb-24">
+      <div className="flex-1 overflow-y-auto pb-24 px-4 flex flex-col items-center">
+        {!isLoading && (
+          <div className="w-full max-w-sm mb-4 mt-2">
+            <input
+              type="text"
+              placeholder="Type a question..."
+              className="w-full px-4 py-3 rounded-full border-2 border-primary/20 focus:border-primary focus:outline-none text-slate-700 shadow-sm transition-all"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  handleAsk(e.currentTarget.value);
+                  e.currentTarget.value = '';
+                }
+              }}
+            />
+          </div>
+        )}
         <AnswerDisplay
           question={question}
           answer={answer}
