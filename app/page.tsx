@@ -16,9 +16,48 @@ import {
 } from "lucide-react";
 import { generateAnswer } from "./actions";
 
+// --- Type Definitions to fix missing SpeechRecognition types ---
+interface SpeechRecognition extends EventTarget {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  start(): void;
+  stop(): void;
+  onstart: ((this: SpeechRecognition, ev: Event) => any) | null;
+  onend: ((this: SpeechRecognition, ev: Event) => any) | null;
+  onresult: ((this: SpeechRecognition, ev: SpeechRecognitionEvent) => any) | null;
+}
+
+interface SpeechRecognitionError extends Event {
+  error: string;
+  message: string;
+}
+
+interface SpeechRecognitionEvent extends Event {
+  results: SpeechRecognitionResultList;
+}
+
+interface SpeechRecognitionResultList {
+  length: number;
+  item(index: number): SpeechRecognitionResult;
+  [index: number]: SpeechRecognitionResult;
+}
+
+interface SpeechRecognitionResult {
+  isFinal: boolean;
+  length: number;
+  item(index: number): SpeechRecognitionAlternative;
+  [index: number]: SpeechRecognitionAlternative;
+}
+
+interface SpeechRecognitionAlternative {
+  transcript: string;
+  confidence: number;
+}
+
 type SpeechRecognitionWindow = Window & {
-  webkitSpeechRecognition?: new () => SpeechRecognition;
-  SpeechRecognition?: new () => SpeechRecognition;
+  webkitSpeechRecognition?: { new(): SpeechRecognition };
+  SpeechRecognition?: { new(): SpeechRecognition };
 };
 
 type AnswerPayload = {
@@ -220,11 +259,10 @@ export default function Home() {
 
                 <button
                   onClick={isListening ? stopListening : startListening}
-                  className={`absolute bottom-4 left-1/2 flex w-[74%] min-w-[220px] -translate-x-1/2 items-center justify-center gap-2 rounded-full px-6 py-3 text-base font-semibold text-white shadow-lg transition-transform active:scale-95 md:bottom-5 md:w-auto md:min-w-0 md:px-7 md:text-lg ${
-                    isListening
+                  className={`absolute bottom-4 left-1/2 flex w-[74%] min-w-[220px] -translate-x-1/2 items-center justify-center gap-2 rounded-full px-6 py-3 text-base font-semibold text-white shadow-lg transition-transform active:scale-95 md:bottom-5 md:w-auto md:min-w-0 md:px-7 md:text-lg ${isListening
                       ? "bg-gradient-to-r from-rose-500 to-red-500"
                       : "bg-gradient-to-r from-blue-500 to-blue-600"
-                  }`}
+                    }`}
                 >
                   {isListening ? <Square size={18} fill="currentColor" /> : <Mic size={20} />}
                   {isListening ? "Stop Listening" : "Speak Question"}
@@ -251,11 +289,10 @@ export default function Home() {
                   <button
                     onClick={submitTypedQuestion}
                     disabled={!typedQuestion.trim() || isLoading}
-                    className={`rounded-full px-4 py-2 text-sm font-semibold ${
-                      !typedQuestion.trim() || isLoading
+                    className={`rounded-full px-4 py-2 text-sm font-semibold ${!typedQuestion.trim() || isLoading
                         ? "cursor-not-allowed bg-slate-300 text-slate-500"
                         : "bg-blue-500 text-white"
-                    }`}
+                      }`}
                   >
                     Ask
                   </button>
@@ -317,13 +354,12 @@ export default function Home() {
               <button
                 onClick={toggleSpeech}
                 disabled={!result}
-                className={`flex w-full items-center justify-center gap-2 rounded-3xl border px-5 py-4 text-lg font-semibold transition active:scale-[0.99] md:text-xl ${
-                  !result
+                className={`flex w-full items-center justify-center gap-2 rounded-3xl border px-5 py-4 text-lg font-semibold transition active:scale-[0.99] md:text-xl ${!result
                     ? "cursor-not-allowed border-slate-600 bg-slate-800 text-slate-500"
                     : aiSpeaking
                       ? "border-orange-400 bg-orange-50 text-orange-600"
                       : isDark ? "border-blue-500 bg-slate-950 text-blue-400" : "border-blue-500 bg-white text-blue-600"
-                }`}
+                  }`}
               >
                 {aiSpeaking ? <Square size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" />}
                 {aiSpeaking ? "Stop AI Answer" : "Play AI Answer"}
