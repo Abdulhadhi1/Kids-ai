@@ -2,6 +2,8 @@
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
+type Language = "en" | "ta";
+
 type AnswerResult = {
   title: string;
   description: string;
@@ -11,37 +13,185 @@ type AnswerResult = {
   url: string | null;
 };
 
-function trySolveBasicMath(question: string): string | null {
-  const cleaned = question
-    .toLowerCase()
-    .replace(/what is|calculate|solve|equals|=|\?/g, "")
-    .replace(/\s+/g, "");
+function normalizeQuestion(input: string): string {
+  let q = input.trim();
+  if (!q) return q;
 
+  const typoMap: Array<[RegExp, string]> = [
+    [/\bf\b/gi, "of"],
+    [/\bans\b/gi, "answer"],
+    [/\bques\b/gi, "question"],
+    [/\bpls\b/gi, "please"],
+    [/\bwat\b/gi, "what"],
+    [/\bteh\b/gi, "the"],
+    [/\brecieve\b/gi, "receive"],
+    [/\bmultiplay\b/gi, "multiply"],
+  ];
+
+  for (const [pattern, replacement] of typoMap) {
+    q = q.replace(pattern, replacement);
+  }
+
+  return q.replace(/\s+/g, " ").trim();
+}
+
+function evaluateSafeExpression(expression: string): number | null {
+  const cleaned = expression.replace(/\s+/g, "");
   if (!cleaned || /[^0-9+\-*/().]/.test(cleaned)) return null;
   if (/[+\-*/]{2,}/.test(cleaned.replace(/^\-/, ""))) return null;
-
   try {
     const result = Function(`"use strict"; return (${cleaned})`)();
     if (typeof result !== "number" || !Number.isFinite(result)) return null;
-    return `${cleaned} = ${result}`;
+    return result;
   } catch {
     return null;
   }
 }
 
-async function generateWithGemini(question: string): Promise<AnswerResult | null> {
+function parseNumberWords(words: string[]): number | null {
+  const small: Record<string, number> = {
+    zero: 0,
+    one: 1,
+    two: 2,
+    three: 3,
+    four: 4,
+    five: 5,
+    six: 6,
+    seven: 7,
+    eight: 8,
+    nine: 9,
+    ten: 10,
+    eleven: 11,
+    twelve: 12,
+    thirteen: 13,
+    fourteen: 14,
+    fifteen: 15,
+    sixteen: 16,
+    seventeen: 17,
+    eighteen: 18,
+    nineteen: 19,
+    twenty: 20,
+    thirty: 30,
+    forty: 40,
+    fifty: 50,
+    sixty: 60,
+    seventy: 70,
+    eighty: 80,
+    ninety: 90,
+  };
+
+  let total = 0;
+  let current = 0;
+
+  for (const rawWord of words) {
+    const word = rawWord.toLowerCase();
+    if (word === "and") continue;
+
+    if (word === "hundred") {
+      if (current === 0) current = 1;
+      current *= 100;
+      continue;
+    }
+
+    if (word === "thousand") {
+      if (current === 0) current = 1;
+      total += current * 1000;
+      current = 0;
+      continue;
+    }
+
+    if (small[word] !== undefined) {
+      current += small[word];
+      continue;
+    }
+
+    return null;
+  }
+
+  return total + current;
+}
+
+function extractMathExpression(question: string): string | null {
+  const q = question.toLowerCase();
+
+  const directMatch = q.match(/[-(]?\d+(\.\d+)?([)\s]*[+\-*/x][\s(]*[-]?\d+(\.\d+)?)+/);
+  if (directMatch?.[0]) {
+    return directMatch[0].replace(/x/g, "*");
+  }
+
+  const normalized = q
+    .replace(/multiplied by|times|into/g, " * ")
+    .replace(/divided by|over/g, " / ")
+    .replace(/plus|add(ed)? to/g, " + ")
+    .replace(/minus|subtract(ed)? from/g, " - ")
+    .replace(/what is|what's|answer|of|the|please|calculate|solve|for|\?/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!normalized) return null;
+
+  const tokens = normalized.split(" ");
+  const expressionParts: string[] = [];
+  let i = 0;
+
+  while (i < tokens.length) {
+    const token = tokens[i];
+    if (["+", "-", "*", "/"].includes(token)) {
+      expressionParts.push(token);
+      i += 1;
+      continue;
+    }
+
+    if (/^\d+(\.\d+)?$/.test(token)) {
+      expressionParts.push(token);
+      i += 1;
+      continue;
+    }
+
+    const chunk: string[] = [];
+    while (i < tokens.length && !["+", "-", "*", "/"].includes(tokens[i])) {
+      chunk.push(tokens[i]);
+      i += 1;
+    }
+
+    const parsed = parseNumberWords(chunk);
+    if (parsed !== null) {
+      expressionParts.push(String(parsed));
+    }
+  }
+
+  const expr = expressionParts.join(" ").trim();
+  if (!/[+\-*/]/.test(expr)) return null;
+  return expr;
+}
+
+function trySolveMath(question: string): string | null {
+  const expression = extractMathExpression(question);
+  if (!expression) return null;
+  const result = evaluateSafeExpression(expression);
+  if (result === null) return null;
+  return `${expression} = ${result}`;
+}
+
+async function generateWithGemini(question: string, language: Language): Promise<AnswerResult | null> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return null;
 
   try {
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+    const languageInstruction =
+      language === "ta"
+        ? "Reply in simple Tamil for school kids."
+        : "Reply in simple English for school kids.";
+
     const prompt = `
 You are a helpful AI tutor for kids.
-Answer the user's question clearly and correctly.
-Use simple language.
-If the question is math, give the final answer first, then 1-2 short explanation lines.
-Keep your response under 120 words.
+${languageInstruction}
+Answer clearly and correctly.
+If the question is math, give the final answer first, then short steps.
+Keep response under 120 words.
 
 Question: ${question}
 `;
@@ -51,7 +201,7 @@ Question: ${question}
     if (!text) return null;
 
     return {
-      title: "AI Tutor Answer",
+      title: language === "ta" ? "AI ஆசிரியர் பதில்" : "AI Tutor Answer",
       description: "Generated by Gemini",
       text,
       source: "Gemini",
@@ -64,7 +214,7 @@ Question: ${question}
   }
 }
 
-async function generateFromSearch(question: string): Promise<AnswerResult | null> {
+async function generateFromSearch(question: string, language: Language): Promise<AnswerResult | null> {
   const topic = question
     .replace(/^(who|what|where|when|why|how)\s(is|are|was|were|do|does|did|can|could|should|would)\s/i, "")
     .replace(/^(the|a|an)\s/i, "")
@@ -114,16 +264,26 @@ async function generateFromSearch(question: string): Promise<AnswerResult | null
     }
   }
 
-  return null;
+  return {
+    title: language === "ta" ? "பதில் கிடைக்கவில்லை" : "No direct result",
+    description: "Fallback response",
+    text:
+      language === "ta"
+        ? "நான் பதிலை கண்டுபிடிக்க முடியவில்லை. தயவு செய்து கேள்வியை வேறு முறையில் கேளுங்கள்."
+        : "I could not find a reliable answer. Please try rephrasing your question.",
+    source: "System",
+    image: null,
+    url: null,
+  };
 }
 
-export async function generateAnswer(question: string): Promise<AnswerResult> {
-  const trimmed = question.trim();
-  if (!trimmed) {
+export async function generateAnswer(question: string, language: Language = "en"): Promise<AnswerResult> {
+  const normalized = normalizeQuestion(question);
+  if (!normalized) {
     return {
-      title: "No question",
+      title: language === "ta" ? "கேள்வி இல்லை" : "No question",
       description: "Input required",
-      text: "Please ask a question.",
+      text: language === "ta" ? "தயவு செய்து கேள்வி கேளுங்கள்." : "Please ask a question.",
       source: "System",
       image: null,
       url: null,
@@ -131,41 +291,73 @@ export async function generateAnswer(question: string): Promise<AnswerResult> {
   }
 
   try {
-    const aiAnswer = await generateWithGemini(trimmed);
-    if (aiAnswer) return aiAnswer;
-
-    const mathAnswer = trySolveBasicMath(trimmed);
+    const mathAnswer = trySolveMath(normalized);
     if (mathAnswer) {
+      const value = mathAnswer.split("=").at(-1)?.trim() ?? "";
       return {
-        title: "Math Answer",
-        description: "Local calculator fallback",
-        text: `The answer is ${mathAnswer.split("=").at(-1)?.trim()}.`,
+        title: language === "ta" ? "கணித பதில்" : "Math Answer",
+        description: "Smart math parser",
+        text:
+          language === "ta"
+            ? `${mathAnswer}. பதில் ${value}.`
+            : `${mathAnswer}. The answer is ${value}.`,
         source: "Local Solver",
         image: null,
         url: null,
       };
     }
 
-    const searchAnswer = await generateFromSearch(trimmed);
-    if (searchAnswer) return searchAnswer;
+    const aiAnswer = await generateWithGemini(normalized, language);
+    if (aiAnswer) return aiAnswer;
 
-    return {
-      title: "No direct result",
-      description: "Fallback response",
-      text: "I could not find a reliable answer. Please try rephrasing your question.",
-      source: "System",
-      image: null,
-      url: null,
-    };
+    return (await generateFromSearch(normalized, language)) as AnswerResult;
   } catch (error) {
     console.error("Answer generation error:", error);
     return {
-      title: "Error",
-      description: "System error",
-      text: "I had trouble getting the answer. Please try again.",
+      title: language === "ta" ? "AI பதில்" : "AI Tutor Reply",
+      description: "Error fallback",
+      text:
+        language === "ta"
+          ? `உங்கள் கேள்வி: "${normalized}". இப்போது தற்காலிக சிக்கல் உள்ளது. மீண்டும் முயற்சி செய்யுங்கள்.`
+          : `I got your question: "${normalized}". I had a temporary issue while generating the full answer. Please ask again, and I will reply.`,
       source: "System",
       image: null,
       url: null,
     };
+  }
+}
+
+export async function generateDrawingFromPrompt(prompt: string): Promise<{ image: string | null; text: string }> {
+  const cleaned = prompt.trim();
+  if (!cleaned) {
+    return { image: null, text: "Please enter a drawing prompt." };
+  }
+
+  try {
+    const accessKey = process.env.UNSPLASH_ACCESS_KEY;
+    if (!accessKey) {
+      return { image: null, text: `I understood: "${cleaned}". Add UNSPLASH_ACCESS_KEY to enable drawing images.` };
+    }
+
+    const url = `https://api.unsplash.com/search/photos?query=${encodeURIComponent(cleaned)}&per_page=1&orientation=landscape&client_id=${accessKey}`;
+    const resp = await fetch(url, { cache: "no-store" });
+    if (!resp.ok) {
+      return { image: null, text: `I understood: "${cleaned}". I could not fetch a drawing image right now.` };
+    }
+
+    const data = await resp.json();
+    const image = data?.results?.[0]?.urls?.regular ?? null;
+
+    if (!image) {
+      return { image: null, text: `I understood: "${cleaned}". No matching image found, try a different prompt.` };
+    }
+
+    return {
+      image,
+      text: `Here is a drawing-style visual for: "${cleaned}".`,
+    };
+  } catch (error) {
+    console.error("Drawing generation error:", error);
+    return { image: null, text: `I understood: "${cleaned}". Temporary error while generating drawing.` };
   }
 }
