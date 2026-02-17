@@ -22,11 +22,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${varelaRound.className} antialiased bg-background text-foreground min-h-screen flex flex-col`}
+        className={`${varelaRound.className} antialiased min-h-screen`}
       >
-        <main className="flex-1 flex flex-col w-full max-w-md mx-auto relative overflow-hidden bg-white/50 shadow-2xl min-h-screen">
-          {children}
-        </main>
+        {children}
       </body>
     </html>
   );
